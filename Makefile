@@ -1,14 +1,8 @@
-PACKAGE			:= MetricServer.AspNetCore
-OWNER			:= dfds
-REPO			:= MetricServer
-PROJECT			:= github.com/$(OWNER)/$(REPO)
+PACKAGES		:= MetricServer.AspNetCore
 CONFIGURATION	:= Debug
 VERSION			?= $(shell git describe --tags --always --dirty --match=*.*.* 2> /dev/null || cat $(CURDIR)/.version 2> /dev/null || echo 0.0.1)
 BIN				:= $(CURDIR)/.output
 M				= $(shell printf "\033[34;1m▶\033[0m")
-
-PROJECT_FILE=${PWD}/src/Dafda/
-OUTPUT_DIR=${PWD}/.output
 
 .PHONY: all
 all: build
@@ -29,9 +23,11 @@ build: ; $(info $(M) Building...) @ ## build the project
 	@cd src && dotnet build --configuration $(CONFIGURATION)
 
 .PHONY: package
-package: ; $(info $(M) Packing...) @ ## create nuget package
-	@cd src && dotnet pack --no-build --configuration $(CONFIGURATION) -p:PackageVersion=$(VERSION) --output $(BIN) $(CURDIR)/src/$(PACKAGE)/
-	
+package: $(addprefix package-,$(subst /,-,$(PACKAGES))) ## create nuget packages
+
+package-%: ; $(info $(M) Packing $*...)
+	@cd src && dotnet pack --no-build --configuration $(CONFIGURATION) -p:PackageVersion=$(VERSION) --output $(BIN) $(CURDIR)/src/$*/
+
 .PHONY: local-release
 local-release: clean restore build package ## create a nuget package for local development
 
@@ -40,8 +36,10 @@ release: CONFIGURATION=Release ## create a release nuget package
 release: clean restore build package
 
 .PHONY: push
-push: require ## push nuget package
-	cd $(OUTPUT_DIR) && dotnet nuget push *.nupkg --source https://api.nuget.org/v3/index.json --api-key $(NUGET_API_KEY)
+push: $(addprefix push-,$(subst /,-,$(PACKAGES))) ## push nuget packages
+
+push-%: require ; $(info $(M) Pushing $*...)
+	cd $(BIN) && dotnet nuget push $*.$(VERSION).nupkg --source https://api.nuget.org/v3/index.json --api-key $(NUGET_API_KEY)
 
 .PHONY: require
 require:
@@ -50,7 +48,7 @@ ifndef NUGET_API_KEY
 endif
 
 .PHONY: version
-version: ## prints the version (from either environment VERSION, git describe, or .version. default: v0.0.1)
+version: ## prints the version (from either environment VERSION, git describe, or .version. default: 0.0.1)
 	@echo $(VERSION)
 
 .PHONY: help
