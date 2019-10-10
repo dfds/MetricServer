@@ -16,4 +16,6 @@ jobs:
       with:
         dotnet-version: 2.2.108
     - name: Build Release and Push
+      env:
+        NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
       run: make release push
