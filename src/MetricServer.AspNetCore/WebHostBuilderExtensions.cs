@@ -2,83 +2,52 @@ using System;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using Prometheus;
 
 namespace MetricServer.AspNetCore
 {
     public static class WebHostBuilderExtensions
     {
-        public static IWebHostBuilder UseMetricsServer(this IWebHostBuilder builder, Action<IMetricOptionsBuilder> buildOptions = null)
+        public static IWebHostBuilder UseMetricsServer(this IWebHostBuilder builder, Action<IMetricServerOptionsConfiguration> configure = null)
         {
-            return builder.ConfigureServices(services => services.UseMetricsServer(buildOptions));
+            return builder.ConfigureServices(services => services.UseMetricsServer(configure));
         }
 
-        public static IWebHostBuilder UseMetricsServer(this IWebHostBuilder builder, string host = MetricServerDefault.DefaultHost, int port = MetricServerDefault.DefaultPort)
+        public static IServiceCollection UseMetricsServer(this IServiceCollection services, Action<IMetricServerOptionsConfiguration> configure = null)
         {
-            return builder.ConfigureServices(services => services.UseMetricsServer(host, port));
-        }
+            var builder = new MetricServerOptionsConfiguration(services);
+            configure?.Invoke(builder);
 
-        public static IServiceCollection UseMetricsServer(this IServiceCollection services, string host = MetricServerDefault.DefaultHost, int port = MetricServerDefault.DefaultPort)
-        {
-            return services.UseMetricsServer(builder => { builder.WithHost(host).WithPort(port); });
-        }
-
-        public static IServiceCollection UseMetricsServer(this IServiceCollection services, Action<IMetricOptionsBuilder> buildOptions = null)
-        {
-            var builder = new MetricOptionsBuilder();
-            buildOptions?.Invoke(builder);
-            var serverOptions = builder.Build();
-
-            if (serverOptions.EnableHttpMetrics)
-            {
-                services.AddSingleton<IStartupFilter, HttpMetricsStartupFilter>();
-            }
-
-            services.AddOptions<MetricServerOptions>().Configure(options =>
-            {
-                options.Host = serverOptions.Host;
-                options.Port = serverOptions.Port;
-            });
-
+            services.AddOptions<MetricServerOptions>().Configure(builder.Apply);
             services.AddHostedService<MetricHostedService>();
 
             return services;
         }
+    }
 
-        private class HttpMetricsStartupFilter : IStartupFilter
+    internal class HttpMetricsStartupFilter : IStartupFilter
+    {
+        private readonly ILogger<HttpMetricsStartupFilter> _logger;
+        private readonly MetricServerOptions _options;
+
+        public HttpMetricsStartupFilter(ILogger<HttpMetricsStartupFilter> logger, IOptionsMonitor<MetricServerOptions> options)
         {
-            public Action<IApplicationBuilder> Configure(Action<IApplicationBuilder> next)
+            _logger = logger;
+            _options = options.CurrentValue;
+        }
+
+        public Action<IApplicationBuilder> Configure(Action<IApplicationBuilder> next)
+        {
+            return app =>
             {
-                return app =>
-                {
-                    app.UseHttpMetrics(options =>
-                    {
-                        //Metrics.CreateGauge("http_requests_in_progress", "The number of requests currently in progress in the ASP.NET Core pipeline.");
-                        options.InProgress.Enabled = false;
+                _logger.LogDebug("Configure:UseHttpMetrics");
 
-                        //Metrics.CreateCounter("http_requests_received_total", "Provides the count of HTTP requests that have been processed by the ASP.NET Core pipeline.", HttpRequestLabelNames.All);
-                        options.RequestCount.Counter = Metrics.CreateCounter("control_tower_request_count_total", "", "code", "method", "controller", "action");
+                app.UseHttpMetrics(_options.HttpMetrics);
 
-                        //Metrics.CreateHistogram("http_request_duration_seconds", "The duration of HTTP requests processed by an ASP.NET Core application.",
-                        //    new HistogramConfiguration
-                        //    {
-                        //        Buckets = Histogram.ExponentialBuckets(0.001, 2.0, 16),
-                        //        LabelNames = HttpRequestLabelNames.All
-                        //    }
-                        //);
-
-                        options.RequestDuration.Histogram = Metrics.CreateHistogram("control_tower_request_duration_seconds", "",
-                            new HistogramConfiguration
-                            {
-                                Buckets = Histogram.LinearBuckets(1, 1, 64),
-                                LabelNames = new[] {"code", "method"}
-                            }
-                        );
-                    });
-
-                    next(app);
-                };
-            }
+                next(app);
+            };
         }
     }
 }
