@@ -39,7 +39,7 @@ Either add `UseMetricServer()` directly to `IWebHostBuilder` in the `Program.cs`
     // ...
  ```
 
-or use `AddMetricServer()` on the `IServiceCollection` in the `Startup.cs`:
+or use `UseMetricsServer()` on the `IServiceCollection` in the `Startup.cs`:
 
 ```csharp
     // ...
@@ -61,3 +61,30 @@ or use `AddMetricServer()` on the `IServiceCollection` in the `Startup.cs`:
     }
     // ...
 ```
+
+### Configuration
+
+By default the Host is `0.0.0.0` and the Port is `8080`. To enable capture of HTTP metrics use the `EnableHttpMetrics()` as in the snippet below:
+
+```csharp
+    // ...
+    public class Program
+    {
+        public static int Main(string[] args)
+        {
+            // ...
+        }
+
+        public static IWebHostBuilder CreateWebHostBuilder(string[] args) =>
+            WebHost.CreateDefaultBuilder(args)
+                .UseMetricsServer(opt => 
+                {
+                    opt.WithHost("localhost");
+                    opt.WithPort(5050);
+                    opt.EnableHttpMetrics();
+
+                })
+                .UseStartup<Startup>();
+    }
+    // ...
+ ```
